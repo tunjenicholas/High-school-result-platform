@@ -1,0 +1,190 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Student Dashboard - School Result Platform</title>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            line-height: 1.6;
+            margin: 0;
+            padding: 20px;
+            background-color: #f4f4f4;
+        }
+        .container {
+            max-width: 1200px;
+            margin: auto;
+            background: white;
+            padding: 20px;
+            border-radius: 5px;
+            box-shadow: 0 0 10px rgba(0,0,0,0.1);
+        }
+        h1, h2 {
+            color: #333;
+        }
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            margin-top: 20px;
+        }
+        th, td {
+            padding: 10px;
+            border: 1px solid #ddd;
+            text-align: left;
+        }
+        th {
+            background-color: #f2f2f2;
+        }
+        .chart-container {
+            width: 100%;
+            max-width: 800px;
+            margin: 20px auto;
+        }
+        .notifications {
+            margin-top: 20px;
+            padding: 10px;
+            background-color: #e7f3fe;
+            border: 1px solid #b6d4fe;
+            border-radius: 5px;
+        }
+        .notification {
+            padding: 5px 0;
+            border-bottom: 1px solid #b6d4fe;
+        }
+        .notification:last-child {
+            border-bottom: none;
+        }
+        .comment {
+            font-style: italic;
+            color: #666;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>Student Dashboard</h1>
+        <div id="notificationsContainer" class="notifications"></div>
+        <div id="resultContainer"></div>
+        <div class="chart-container">
+            <canvas id="performanceChart"></canvas>
+        </div>
+    </div>
+    <script>
+        document.addEventListener('DOMContentLoaded', async () => {
+            const token = localStorage.getItem('token');
+            if (!token) {
+                window.location.href = '/login.html';
+                return;
+            }
+
+            try {
+                const userResponse = await fetch('/api/user-profile', {
+                    headers: { 'Authorization': `Bearer ${token}` }
+                });
+                const userData = await userResponse.json();
+                const userId = userData.user_id;
+
+                await Promise.all([
+                    displayResults(userId),
+                    displayPerformanceChart(userId),
+                    displayNotifications()
+                ]);
+            } catch (error) {
+                console.error('Error fetching data:', error);
+                document.getElementById('resultContainer').innerHTML = '<p>Error loading results. Please try again later.</p>';
+            }
+        });
+
+        async function displayResults(userId) {
+            const token = localStorage.getItem('token');
+            const resultsResponse = await fetch(`/api/results/student/${userId}`, {
+                headers: { 'Authorization': `Bearer ${token}` }
+            });
+            const data = await resultsResponse.json();
+
+            const resultContainer = document.getElementById('resultContainer');
+            resultContainer.innerHTML = `
+                <h2>Your Results</h2>
+                <table>
+                    <thead>
+                        <tr>
+                            <th>Subject</th>
+                            <th>Term</th>
+                            <th>Score</th>
+                            <th>Grade</th>
+                            <th>Teacher's Comment</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        ${data.results.map(result => `
+                            <tr>
+                                <td>${result.subject_name}</td>
+                                <td>${result.term}</td>
+                                <td>${result.score}</td>
+                                <td>${result.grade}</td>
+                                <td class="comment">${result.teacher_comment || 'No comment'}</td>
+                            </tr>
+                        `).join('')}
+                    </tbody>
+                </table>
+            `;
+        }
+
+        async function displayPerformanceChart(userId) {
+            const token = localStorage.getItem('token');
+            const performanceResponse = await fetch(`/api/student-performance/${userId}`, {
+                headers: { 'Authorization': `Bearer ${token}` }
+            });
+            const performanceData = await performanceResponse.json();
+
+            const labels = performanceData.map(d => `${d.academic_year} - ${d.term}`);
+            const scores = performanceData.map(d => d.average_score);
+
+            const ctx = document.getElementById('performanceChart').getContext('2d');
+            new Chart(ctx, {
+                type: 'line',
+                data: {
+                    labels: labels,
+                    datasets: [{
+                        label: 'Average Score',
+                        data: scores,
+                        borderColor: 'rgb(75, 192, 192)',
+                        tension: 0.1
+                    }]
+                },
+                options: {
+                    responsive: true,
+                    scales: {
+                        y: {
+                            beginAtZero: true,
+                            max: 100
+                        }
+                    }
+                }
+            });
+        }
+
+        async function displayNotifications() {
+            const token = localStorage.getItem('token');
+            const notificationsResponse = await fetch('/api/notifications', {
+                headers: { 'Authorization': `Bearer ${token}` }
+            });
+            const notifications = await notificationsResponse.json();
+
+            const notificationsContainer = document.getElementById('notificationsContainer');
+            notificationsContainer.innerHTML = `
+                <h2>Recent Notifications</h2>
+                ${notifications.slice(0, 5).map(notification => `
+                    <div class="notification">
+                        ${notification.message}
+                        <small>(${new Date(notification.created_at).toLocaleString()})</small>
+                    </div>
+                `).join('')}
+                <a href="/notifications.html">View all notifications</a>
+            `;
+        }
+    </script>
+</body>
+</html>

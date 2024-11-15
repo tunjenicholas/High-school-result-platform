@@ -113,13 +113,9 @@ exports.forgotPassword = async (req, res) => {
     
     await pool.query('UPDATE Users SET reset_token = ? WHERE user_id = ?', [resetToken, user.user_id]);
     
-    try {
-      await sendPasswordResetEmail(email, resetToken);
-      res.json({ message: 'Password reset email sent' });
-    } catch (emailError) {
-      console.error('Error sending password reset email:', emailError);
-      res.status(500).json({ message: 'Failed to send password reset email. Please try again later or contact support.' });
-    }
+    await sendPasswordResetEmail(email, resetToken);
+
+    res.json({ message: 'Password reset email sent' });
   } catch (error) {
     console.error(error);
     res.status(500).json({ message: 'Server error' });
@@ -129,7 +125,12 @@ exports.forgotPassword = async (req, res) => {
 exports.resetPassword = async (req, res) => {
   try {
     const { token, newPassword } = req.body;
-    const decoded = jwt.verify(token, process.env.JWT_SECRET);
+    let decoded;
+    try {
+      decoded = jwt.verify(token, process.env.JWT_SECRET);
+    } catch (error) {
+      return res.status(400).json({ message: 'Invalid or expired reset token' });
+    }
     
     const hashedPassword = await bcrypt.hash(newPassword, 10);
     
@@ -142,10 +143,10 @@ exports.resetPassword = async (req, res) => {
       return res.status(400).json({ message: 'Invalid or expired reset token' });
     }
 
-    res.json({ message: 'Password reset successful' });
+    res.json({ message: 'Password reset successful. You can now log in with your new password.' });
   } catch (error) {
     console.error(error);
-    res.status(400).json({ message: 'Invalid or expired reset token' });
+    res.status(500).json({ message: 'Server error' });
   }
 };
 
@@ -179,6 +180,63 @@ exports.getUserProfile = async (req, res) => {
     }
 
     res.json(users[0]);
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({ message: 'Server error' });
+  }
+};
+
+exports.registerParent = async (req, res) => {
+  try {
+    const { email, password, fullName, studentIds } = req.body;
+    
+    // Check if email already exists
+    const [existingUsers] = await pool.query('SELECT * FROM Users WHERE email = ?', [email]);
+    if (existingUsers.length > 0) {
+      return res.status(400).json({ message: 'Email already in use' });
+    }
+
+    // Hash password
+    const hashedPassword = await bcrypt.hash(password, 10);
+
+    // Create parent user
+    const [result] = await pool.query(
+      'INSERT INTO Users (email, password_hash, full_name, user_type) VALUES (?, ?, ?, ?)',
+      [email, hashedPassword, fullName, 'parent']
+    );
+
+    const parentId = result.insertId;
+
+    // Link parent to students
+    for (const studentId of studentIds) {
+      await pool.query(
+        'INSERT INTO ParentStudent (parent_id, student_id) VALUES (?, ?)',
+        [parentId, studentId]
+      );
+    }
+
+    // Generate and send verification email
+    const verificationToken = jwt.sign({ userId: parentId }, process.env.JWT_SECRET, { expiresIn: '1d' });
+    await sendVerificationEmail(email, verificationToken);
+
+    res.status(201).json({ message: 'Parent registered successfully. Please check your email to verify your account.' });
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({ message: 'Server error' });
+  }
+};
+
+exports.getParentStudents = async (req, res) => {
+  try {
+    const parentId = req.user.userId;
+    const [students] = await pool.query(
+      `SELECT u.user_id, u.full_name, u.email 
+       FROM Users u 
+       JOIN ParentStudent ps ON u.user_id = ps.student_id 
+       WHERE ps.parent_id = ?`,
+      [parentId]
+    );
+    res.json(students);
   } catch (error) {
     console.error(error);
     res.status(500).json({ message: 'Server error' });

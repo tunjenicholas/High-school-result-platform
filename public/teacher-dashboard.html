@@ -1,0 +1,223 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Teacher Dashboard - School Result Platform</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            line-height: 1.6;
+            margin: 0;
+            padding: 20px;
+            background-color: #f4f4f4;
+        }
+        .container {
+            max-width: 1200px;
+            margin: auto;
+            background: white;
+            padding: 20px;
+            border-radius: 5px;
+            box-shadow: 0 0 10px rgba(0,0,0,0.1);
+        }
+        h1, h2 {
+            color: #333;
+        }
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            margin-top: 20px;
+        }
+        th, td {
+            padding: 10px;
+            border: 1px solid #ddd;
+            text-align: left;
+        }
+        th {
+            background-color: #f2f2f2;
+        }
+        input[type="number"], input[type="text"] {
+            width: 100%;
+            padding: 5px;
+            border: 1px solid #ddd;
+            border-radius: 3px;
+        }
+        button {
+            background-color: #4CAF50;
+            color: white;
+            padding: 10px 15px;
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;
+        }
+        button:hover {
+            background-color: #45a049;
+        }
+        .filters {
+            display: flex;
+            gap: 10px;
+            margin-bottom: 20px;
+        }
+        .pagination {
+            display: flex;
+            justify-content: center;
+            margin-top: 20px;
+        }
+        .pagination button {
+            margin: 0 5px;
+        }
+        textarea {
+            width: 100%;
+            padding: 5px;
+            border: 1px solid #ddd;
+            border-radius: 3px;
+            resize: vertical;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>Teacher Dashboard</h1>
+        <div class="filters">
+            <select id="classSelect"></select>
+            <select id="subjectSelect"></select>
+            <select id="termSelect">
+                <option value="">All Terms</option>
+                <option value="First">First Term</option>
+                <option value="Second">Second Term</option>
+                <option value="Third">Third Term</option>
+            </select>
+            <button onclick="fetchResults()">Filter</button>
+        </div>
+        <div id="resultsContainer"></div>
+        <div class="pagination" id="pagination"></div>
+    </div>
+    <script>
+        let currentPage = 1;
+        let totalPages = 1;
+
+        document.addEventListener('DOMContentLoaded', async () => {
+            const token = localStorage.getItem('token');
+            if (!token) {
+                window.location.href = '/login.html';
+                return;
+            }
+
+            await Promise.all([loadClasses(), loadSubjects()]);
+            fetchResults();
+        });
+
+        async function loadClasses() {
+            const token = localStorage.getItem('token');
+            const response = await fetch('/api/classes', {
+                headers: { 'Authorization': `Bearer ${token}` }
+            });
+            const classes = await response.json();
+            const classSelect = document.getElementById('classSelect');
+            classes.forEach(c => {
+                const option = document.createElement('option');
+                option.value = c.class_id;
+                option.textContent = c.class_name;
+                classSelect.appendChild(option);
+            });
+        }
+
+        async function loadSubjects() {
+            const token = localStorage.getItem('token');
+            const response = await fetch('/api/subjects', {
+                headers: { 'Authorization': `Bearer ${token}` }
+            });
+            const subjects = await response.json();
+            const subjectSelect = document.getElementById('subjectSelect');
+            subjects.forEach(s => {
+                const option = document.createElement('option');
+                option.value = s.subject_id;
+                option.textContent = s.subject_name;
+                subjectSelect.appendChild(option);
+            });
+        }
+
+        async function fetchResults() {
+            const token = localStorage.getItem('token');
+            const classId = document.getElementById('classSelect').value;
+            const subjectId = document.getElementById('subjectSelect').value;
+            const term = document.getElementById('termSelect').value;
+
+            const response = await fetch(`/api/results/class/${classId}?page=${currentPage}&subject=${subjectId}&term=${term}`, {
+                headers: { 'Authorization': `Bearer ${token}` }
+            });
+            const data = await response.json();
+
+            const resultsContainer = document.getElementById('resultsContainer');
+            resultsContainer.innerHTML = `
+                <table>
+                    <thead>
+                        <tr>
+                            <th>Student</th>
+                            <th>Subject</th>
+                            <th>Term</th>
+                            <th>Score</th>
+                            <th>Grade</th>
+                            <th>Comment</th>
+                            <th>Actions</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        ${data.results.map(result => `
+                            <tr>
+                                <td>${result.student_name}</td>
+                                <td>${result.subject_name}</td>
+                                <td>${result.term}</td>
+                                <td><input type="number" value="${result.score}" min="0" max="100" id="score-${result.result_id}"></td>
+                                <td><input type="text" value="${result.grade}" maxlength="2" id="grade-${result.result_id}"></td>
+                                <td><textarea id="comment-${result.result_id}">${result.teacher_comment || ''}</textarea></td>
+                                <td><button onclick="updateResult(${result.result_id})">Update</button></td>
+                            </tr>
+                        `).join('')}
+                    </tbody>
+                </table>
+            `;
+
+            totalPages = data.pagination.totalPages;
+            updatePagination();
+        }
+
+        async function updateResult(resultId) {
+            const token = localStorage.getItem('token');
+            const score = document.getElementById(`score-${resultId}`).value;
+            const grade =
+ document.getElementById(`grade-${resultId}`).value;
+            const teacherComment = document.getElementById(`comment-${resultId}`).value;
+
+            const response = await fetch(`/api/results/${resultId}`, {
+                method: 'PUT',
+                headers: {
+                    'Authorization': `Bearer ${token}`,
+                    'Content-Type': 'application/json'
+                },
+                body: JSON.stringify({ score, grade, teacherComment })
+            });
+
+            if (response.ok) {
+                alert('Result updated successfully');
+            } else {
+                alert('Failed to update result');
+            }
+        }
+        
+        function updatePagination() {
+            const paginationContainer = document.getElementById('pagination');
+            paginationContainer.innerHTML = `
+                <button onclick="changePage(-1)" ${currentPage === 1 ? 'disabled' : ''}>Previous</button>
+                <span>Page ${currentPage} of ${totalPages}</span>
+                <button onclick="changePage(1)" ${currentPage === totalPages ? 'disabled' : ''}>Next</button>
+            `;
+        }
+
+        function changePage(delta) {
+            currentPage += delta;
+            fetchResults();
+        }
+    </script>
+</body>
+</html>

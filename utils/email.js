@@ -14,6 +14,7 @@ const transporter = nodemailer.createTransport({
   }
 });
 
+
 exports.sendVerificationEmail = async (email, token) => {
   const verificationLink = `http://localhost:3000/verify-email/${token}`;
   
@@ -53,10 +54,35 @@ exports.sendPasswordResetEmail = async (email, token) => {
   };
 
   try {
-    await transporter.sendMail(mailOptions);
-    console.log('Password reset email sent successfully');
+    const info = await transporter.sendMail(mailOptions);
+    console.log('Password reset email sent successfully:', info.response);
   } catch (error) {
-    console.error('Error sending password reset email:', error);
+    console.error('Detailed error sending password reset email:', error);
+    throw new Error(`Failed to send password reset email: ${error.message}`);
+  }
+};
+
+exports.sendPasswordResetEmail = async (email, token) => {
+  const resetLink = `http://localhost:3000/reset-password?token=${token}`;
+  
+  const mailOptions = {
+    from: process.env.EMAIL_USER,
+    to: email,
+    subject: 'Reset Your Password',
+    html: `
+      <h1>Password Reset Request</h1>
+      <p>Please click the link below to reset your password:</p>
+      <a href="${resetLink}">${resetLink}</a>
+      <p>If you didn't request this, please ignore this email.</p>
+      <p>This link will expire in 1 hour.</p>
+    `,
+  };
+
+  try {
+    const info = await transporter.sendMail(mailOptions);
+    console.log('Password reset email sent successfully:', info.response);
+  } catch (error) {
+    console.error('Detailed error sending password reset email:', error);
     throw new Error(`Failed to send password reset email: ${error.message}`);
   }
 };
