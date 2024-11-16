@@ -4,41 +4,54 @@ const pool = require('../config/database');
 const { sendVerificationEmail, sendPasswordResetEmail } = require('../utils/email');
 
 exports.login = async (req, res) => {
+  const { username, password } = req.body;
+  console.log(`Login attempt for username: ${username}`);
+
   try {
-    const { username, password } = req.body;
-    const [users] = await pool.query('SELECT * FROM Users WHERE username = ?', [username]);
-    
-    if (users.length === 0) {
-      return res.status(401).json({ message: 'Invalid credentials' });
-    }
+      const [users] = await pool.query('SELECT * FROM Users WHERE username = ?', [username]);
+      console.log(`Users found: ${users.length}`);
 
-    const user = users[0];
-    const isPasswordValid = await bcrypt.compare(password, user.password_hash);
-    
-    if (!isPasswordValid) {
-      return res.status(401).json({ message: 'Invalid credentials' });
-    }
-
-    const [roles] = await pool.query('SELECT role_name FROM Roles r JOIN UserRoles ur ON r.role_id = ur.role_id WHERE ur.user_id = ?', [user.user_id]);
-    const isAdmin = roles.some(role => role.role_name === 'admin');
-
-    if (!user.is_verified && !isAdmin) {
-      if (!user.verification_token) {
-        const verificationToken = jwt.sign({ email: user.email }, process.env.JWT_SECRET, { expiresIn: '24h' });
-        await pool.query('UPDATE Users SET verification_token = ? WHERE user_id = ?', [verificationToken, user.user_id]);
-        await sendVerificationEmail(user.email, verificationToken);
-        return res.status(401).json({ message: 'Your account is not verified. A new verification email has been sent.' });
+      if (users.length === 0) {
+          console.log('No user found with this username');
+          return res.status(401).json({ message: 'Invalid username or password' });
       }
-      return res.status(401).json({ message: 'Please verify your email before logging in' });
-    }
 
-    await pool.query('UPDATE Users SET last_login = CURRENT_TIMESTAMP WHERE user_id = ?', [user.user_id]);
+      const user = users[0];
+      console.log(`User found: ${user.username}, User Type: ${user.user_type}`);
+      console.log(`Stored password hash: ${user.password_hash}`);
+      
+      if (!user.password_hash) {
+          console.error('User found but password_hash is null or undefined');
+          return res.status(401).json({ message: 'Invalid username or password' });
+      }
 
-    const token = jwt.sign({ userId: user.user_id }, process.env.JWT_SECRET, { expiresIn: '1h' });
-    res.json({ token, userId: user.user_id });
+      console.log(`Attempting to compare password: ${password} with hash: ${user.password_hash}`);
+      const isMatch = await bcrypt.compare(password, user.password_hash);
+      console.log(`Password match: ${isMatch}`);
+
+      if (!isMatch) {
+          console.error('Password does not match');
+          return res.status(401).json({ message: 'Invalid username or password' });
+      }
+
+      const token = jwt.sign(
+          { id: user.user_id, role: user.user_type },
+          process.env.JWT_SECRET,
+          { expiresIn: '1h' }
+      );
+
+      res.json({
+          token,
+          user: {
+              id: user.user_id,
+              fullName: user.full_name,
+              username: user.username,
+              role: user.user_type
+          }
+      });
   } catch (error) {
-    console.error(error);
-    res.status(500).json({ message: 'Server error' });
+      console.error('Login error:', error);
+      res.status(500).json({ message: 'Server error' });
   }
 };
 
